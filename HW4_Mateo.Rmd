@@ -1,0 +1,140 @@
+---
+title: "STAA 566 HW 3"
+author: "Mateo Forero"
+output: html_document
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file, encoding = encoding,
+  output_file = file.path(dirname(input_file), out_dir, 'index.html'))})
+---
+
+## Source, information, and implementation
+The data set was sourced from the [Redfin Website](https://www.redfin.com/news/data-center/) and was downloaded specifically as a tsv. No work was done on the csv file directly and all manipulation was done within R. This data is specific for the The 48 contiguous states of America and is meant to communicate house market data for Colorado. This set of tables was further developed for the Shiny App project to allow the selection of different states and years.  
+
+The top table includes sparkline plots for the year being showed (2021) and the bottom table is the difference in Colorado stats with the rest of the states. Being a long table, formatting was added to keep the header in sight the entire time
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,warning= FALSE, message=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(sparkline)
+sparkline(0)
+```
+
+
+```{r}
+raw_data <- read.table('state_market_tracker.tsv',sep ="\t", header = TRUE)
+col_kept <- c("period_begin","period_end","state",
+              "property_type","median_sale_price",
+              "median_list_price", "homes_sold","avg_sale_to_list",
+              "homes_sold_mom","new_listings_mom")
+housing_data <- raw_data[col_kept]
+housing_data$period_begin <- as.Date(housing_data$period_begin, "%Y-%m-%d")
+housing_data$period_end <- as.Date(housing_data$period_end, "%Y-%m-%d")
+```
+
+
+```{r}
+small_tab <- housing_data %>% 
+  mutate(year = format(period_begin, format = "%Y"), 
+         mon = format(period_begin, format = "%m")) %>%
+  filter(state == "California", year == "2021") %>%
+  mutate(month = month.name[as.integer(mon)]) %>%
+  group_by(property_type) %>%
+  summarise(sale_price = mean(median_sale_price),
+            ratio = mean(avg_sale_to_list),
+            sold = sum(homes_sold))
+
+small_tab$sale_price <- scales::dollar(small_tab$sale_price)
+small_tab$sold <- scales::comma(small_tab$sold)
+
+month_tab <- housing_data %>% 
+  mutate(year = format(period_begin, format = "%Y"), 
+         month = format(period_begin, format = "%m")) %>%
+  filter(state == "California", year == "2021")
+
+for(p in month_tab$property_type){
+  property_stat <- month_tab %>%
+    filter(property_type == p) %>%
+    arrange(month)
+  
+  small_tab[which(small_tab$property_type == p),"plt_price"] <- 
+      spk_chr(property_stat$median_sale_price)
+  
+  small_tab[which(small_tab$property_type == p),"plt_ratio"] <- 
+      spk_chr(property_stat$avg_sale_to_list)
+  
+  small_tab[which(small_tab$property_type == p),"plt_sum"] <- 
+      spk_chr(property_stat$homes_sold)
+}
+
+show_small <- small_tab %>%
+  select(property_type, sale_price,
+         plt_price, ratio, plt_ratio,
+         sold,plt_sum) %>%
+  kbl(escape = FALSE,
+      format = 'html',
+      col.names = c("Property Type",
+                    "Sale Price",
+                    "Sale Trend",
+                    "Sale/List Ratio",
+                    "Ratio Trend",
+                    "Homes Sold",
+                    "# Sold Trend"),
+      align = c("l","r","r","r","r","r","r"),
+      digits = 3) %>%
+  add_header_above(c("Colorado 2021 Average" = 7)) %>%
+  kable_material(lightable_options = c("striped", "hover")) %>%
+  kable_styling(fixed_thead = TRUE)
+
+```
+
+```{r}
+long_tab <- housing_data %>% 
+  mutate(year = format(period_begin, format = "%Y"), 
+         mon = format(period_begin, format = "%m")) %>%
+  filter(property_type == "All Residential",
+         year == "2021") %>%
+  group_by(state) %>%
+  summarise(sale_price = mean(median_sale_price),
+            ratio = round(mean(avg_sale_to_list),3),
+            sold = sum(homes_sold))
+sale_diff <- as.integer(long_tab[which(long_tab$state == "Colorado"), 2])
+ratio_diff <- as.double(long_tab[which(long_tab$state == "Colorado"), 3])
+sold_diff <- as.integer(long_tab[which(long_tab$state == "Colorado"), 4])
+
+long_tab$sale_price <- long_tab$sale_price - sale_diff
+long_tab$ratio <- long_tab$ratio - ratio_diff
+long_tab$sold <- long_tab$sold - sold_diff
+
+long_tab <- long_tab[-which(long_tab$state == "Colorado"),]
+
+long_tab$sale_price <- scales::dollar(long_tab$sale_price)
+long_tab$sold <- scales::comma(long_tab$sold)
+
+show_long <- long_tab %>%
+  kbl(col.names = c("Property Type",
+                    "Sale Price",
+                    "Sale/List Ratio",
+                    "Homes Sold"),
+      align = c("l","r","r","r")) %>%
+  add_header_above(c("State Difference [State - Colorado]" = 4)) %>%
+  kable_material(lightable_options = c("striped", "hover")) %>%
+  kable_styling(fixed_thead = TRUE)
+
+```
+
+
+```{r,echo=FALSE}
+show_small
+show_long
+```
+
+
+
+
+
